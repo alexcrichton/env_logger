@@ -31,15 +31,15 @@ fn init_logger() {
         .write_style("MY_LOG_STYLE");
 
     let mut builder = Builder::from_env(env);
-
+    
     // Use a different format for writing log records
-    builder.format(|buf, record| {
-        let mut style = buf.style();
+    builder.format(|record, f| {
+        let mut style = f.style();
         style.set_bg(fmt::Color::Yellow).set_bold(true);
 
-        let timestamp = buf.timestamp();
+        let timestamp = f.timestamp();
 
-        writeln!(buf, "My formatted log ({}): {}", timestamp, style.value(record.args()))
+        writeln!(f, "My formatted log ({}): {}", timestamp, style.value(record.args()))
     });
 
     builder.init();

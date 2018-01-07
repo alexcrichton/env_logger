@@ -158,12 +158,10 @@ extern crate chrono;
 
 use std::env;
 use std::borrow::Cow;
-use std::io::prelude::*;
-use std::io;
 use std::mem;
 use std::cell::RefCell;
 
-use log::{Log, LevelFilter, Level, Record, SetLoggerError, Metadata};
+use log::{Log, LevelFilter, Record, SetLoggerError, Metadata};
 
 pub mod filter;
 pub mod fmt;
@@ -210,7 +208,7 @@ pub struct Env<'a> {
 pub struct Logger {
     writer: fmt::Writer,
     filter: filter::Filter,
-    format: Box<Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send>,
+    format: Box<fmt::Format + Send + Sync>,
 }
 
 /// `Builder` acts as builder for initializing a `Logger`.
@@ -249,7 +247,7 @@ pub struct Logger {
 pub struct Builder {
     filter: filter::Builder,
     writer: fmt::Builder,
-    format: Box<Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send>,
+    format: Box<fmt::Format + Sync + Send>,
 }
 
 impl Builder {
@@ -258,26 +256,7 @@ impl Builder {
         Builder {
             filter: Default::default(),
             writer: Default::default(),
-            format: Box::new(|buf, record| {
-                let ts = buf.timestamp();
-                let level = record.level();
-                let mut level_style = buf.style();
-
-                match level {
-                    Level::Trace => level_style.set_color(Color::White),
-                    Level::Debug => level_style.set_color(Color::Blue),
-                    Level::Info => level_style.set_color(Color::Green),
-                    Level::Warn => level_style.set_color(Color::Yellow),
-                    Level::Error => level_style.set_color(Color::Red).set_bold(true),
-                };
-
-                if let Some(module_path) = record.module_path() {
-                    writeln!(buf, "{:>5} {}: {}: {}", level_style.value(level), ts, module_path, record.args())
-                }
-                else {
-                    writeln!(buf, "{:>5} {}: {}", level_style.value(level), ts, record.args())
-                }
-            }),
+            format: Box::new(fmt::DefaultFormat::new()),
         }
     }
 
@@ -351,7 +330,7 @@ impl Builder {
     /// [`String`]: https://doc.rust-lang.org/stable/std/string/struct.String.html
     /// [`std::fmt`]: https://doc.rust-lang.org/std/fmt/index.html
     pub fn format<F: 'static>(&mut self, format: F) -> &mut Self
-        where F: Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send
+        where F: fmt::Format + Sync + Send
     {
         self.format = Box::new(format);
         self
@@ -430,7 +409,7 @@ impl Builder {
         Logger {
             writer: self.writer.build(),
             filter: self.filter.build(),
-            format: mem::replace(&mut self.format, Box::new(|_, _| Ok(()))),
+            format: mem::replace(&mut self.format, Box::new(fmt::DefaultFormat::new())),
         }
     }
 }
@@ -480,7 +459,7 @@ impl Log for Logger {
                 // The format is guaranteed to be `Some` by this point
                 let mut formatter = tl_buf.as_mut().unwrap();
 
-                let _ = (self.format)(&mut formatter, record).and_then(|_| formatter.print(&self.writer));
+                let _ = self.format.fmt(record, &mut formatter).and_then(|_| formatter.print(&self.writer));
 
                 // Always clear the buffer afterwards
                 formatter.clear();

@@ -39,11 +39,84 @@ use std::{io, fmt};
 use std::rc::Rc;
 use std::cell::RefCell;
 
+use log::{Level, Record};
 use termcolor::{ColorSpec, ColorChoice, Buffer, BufferWriter, WriteColor};
 use chrono::{DateTime, Utc};
 use chrono::format::Item;
 
 pub use termcolor::Color;
+
+/// A trait for formatting a log record.
+pub trait Format {
+    /// Format a record with the given formatter.
+    fn fmt(&self, record: &Record, f: &mut Formatter) -> io::Result<()>;
+}
+
+/// The default log format.
+/// 
+/// Various parts of the format can be toggled on or off.
+#[derive(Debug, Clone)]
+pub struct DefaultFormat {
+    with_timestamp: bool,
+    with_module_path: bool,
+    with_level: bool,
+}
+
+impl Default for DefaultFormat {
+    fn default() -> Self {
+        DefaultFormat {
+            with_timestamp: true,
+            with_module_path: true,
+            with_level: true,
+        }
+    }
+}
+
+impl DefaultFormat {
+    /// Get a default format.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether or not to include a timestamp in the format.
+    pub fn with_timestamp(mut self, yes: bool) -> Self {
+        self.with_timestamp = yes;
+        self
+    }
+}
+
+impl Format for DefaultFormat {
+    fn fmt(&self, record: &Record, f: &mut Formatter) -> io::Result<()> {
+        if self.with_level {
+            let level = record.level();
+            let mut level_style = f.style();
+
+            match level {
+                Level::Trace => level_style.set_color(Color::White),
+                Level::Debug => level_style.set_color(Color::Blue),
+                Level::Info => level_style.set_color(Color::Green),
+                Level::Warn => level_style.set_color(Color::Yellow),
+                Level::Error => level_style.set_color(Color::Red).set_bold(true),
+            };
+
+            write!(f, "{:>5} ", level_style.value(level))?;
+        }
+
+        if self.with_timestamp {
+            let ts = f.timestamp();
+
+            write!(f, "{}: ", ts)?;
+        }
+
+        if self.with_module_path {
+            if let Some(module_path) = record.module_path() {
+                write!(f, "{}: ", module_path)?;
+            }
+        }
+        
+        writeln!(f, "{}", record.args())
+    }
+}
 
 /// A formatter to write logs into.
 /// 
